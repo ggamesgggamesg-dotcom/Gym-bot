@@ -1,9 +1,11 @@
 import asyncio
+import os
 from datetime import datetime
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.exceptions import TelegramBadRequest
+from aiohttp import web
 
 TOKEN = "8812842875:AAGh1x9kqngQtkgfs7K_jIknbB0mYICk310"
 
@@ -12,7 +14,6 @@ dp = Dispatcher()
 
 MAX_SETS = 4
 
-# Обновленное расписание по дням недели
 WORKOUT_SCHEDULES = {
     "mon": {
         "title": "День верха (Понедельник) — Грудь & Трицепс",
@@ -156,10 +157,8 @@ async def live_timer(message: types.Message, user_id: int, total_seconds: int, b
             await asyncio.sleep(1)
             user_data[user_id]["remaining_seconds"] -= 1
 
-        # Когда базовый таймер истек, удаляем старые сообщения
         await cleanup_all_messages(user_id)
 
-        # Отправляем сообщение "Время вышло!"
         finish_msg = await bot.send_message(
             user_id,
             finish_text,
@@ -168,7 +167,6 @@ async def live_timer(message: types.Message, user_id: int, total_seconds: int, b
         )
         track_message(user_id, finish_msg.message_id)
         
-        # Напоминания каждые 15 секунд
         nag_count = 0
         last_nag_id = None
         while True:
@@ -465,7 +463,22 @@ async def process_back_from_shop(callback: types.CallbackQuery):
     track_message(user_id, msg.message_id)
     await callback.answer()
 
+# Микро веб-сервер для того, чтобы Render считал сервис активным
+async def handle_ping(request):
+    return web.Response(text="Bot is running!")
+
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get('/', handle_ping)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.environ.get("PORT", 10000))
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+
 async def main():
+    print("Запуск веб-сервера...")
+    await start_web_server()
     print("Бот запущен!")
     await dp.start_polling(bot)
 
