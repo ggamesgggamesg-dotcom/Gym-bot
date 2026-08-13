@@ -1,5 +1,6 @@
 import asyncio
 import os
+import random
 from datetime import datetime
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command
@@ -13,6 +14,18 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 MAX_SETS = 4
+MAX_EXTRA_REST_COUNT = 2  # Максимум 2 раза по +30 сек на один подход
+
+# Мотивационные подколы и фразы
+MOTIVATION_PHRASES = [
+    "🔥 **Ты так Дэвидом Лейдом до пенсии не станешь!** Живо делать подход!",
+    "🤡 **Че залип в экран?** Мышцы от листания ленты не вырастут!",
+    "🦍 **Твой соперник прямо сейчас жмет твой максимум.** А ты чего ждешь?",
+    "💀 **Хватит сачковать!** Вставай и пахай!",
+    "🏆 **Крис Бамстед в твоем возрасте уже сушился**, а ты сидишь. Вперед к снаряду!",
+    "🏋️‍♂️ **Телефон сам вес не поднимет!** Пора делать подход!",
+    "⚡ **Каждая секунда простоя — минус твой памп.** Марш работать!"
+]
 
 WORKOUT_SCHEDULES = {
     "mon": {
@@ -66,10 +79,12 @@ def get_today_schedule_key():
     elif weekday == 1: return "tue"
     elif weekday == 3: return "thu"
     elif weekday == 4: return "fri"
-    else: return "mon"
+    else: return "rest"  # Среда (2), Суббота (5), Воскресенье (6)
 
 def get_current_exercise(user_id):
     sched_key = user_data[user_id]["day_key"]
+    if sched_key == "rest":
+        return {"name": "Сегодня день отдыха 😴", "is_superset": False}
     ex_idx = user_data[user_id]["exercise_idx"]
     exercises = WORKOUT_SCHEDULES[sched_key]["exercises"]
     if ex_idx < len(exercises):
@@ -77,22 +92,24 @@ def get_current_exercise(user_id):
     return {"name": "Тренировка окончена 🎉", "is_superset": False}
 
 def get_workout_keyboard(user_id):
-    ex = get_current_exercise(user_id)
+    sched_key = user_data[user_id]["day_key"]
     buttons = []
     
-    if ex.get("is_superset"):
-        stage = user_data[user_id].get("superset_stage", 1)
-        if stage == 1:
-            buttons.append([InlineKeyboardButton(text="✅ Сделал Махи (1 часть)", callback_data="done_superset_part1")])
-        elif stage == 2:
-            buttons.append([InlineKeyboardButton(text="✅ Сделал Жим (2 часть)", callback_data="done_superset_part2")])
-    else:
-        buttons.append([InlineKeyboardButton(text="✅ Уже сделал подход", callback_data="done_set")])
-        
-    buttons.append([InlineKeyboardButton(text="⏳ +30 сек отдыха", callback_data="add_30sec")])
-    buttons.append([InlineKeyboardButton(text="🛒 Магазин (10 мин)", callback_data="go_shop")])
-    buttons.append([InlineKeyboardButton(text="⚙️ Настройки / Выбор дня", callback_data="open_settings")])
+    if sched_key != "rest":
+        ex = get_current_exercise(user_id)
+        if ex.get("is_superset"):
+            stage = user_data[user_id].get("superset_stage", 1)
+            if stage == 1:
+                buttons.append([InlineKeyboardButton(text="✅ Сделал Махи (1 часть)", callback_data="done_superset_part1")])
+            elif stage == 2:
+                buttons.append([InlineKeyboardButton(text="✅ Сделал Жим (2 часть)", callback_data="done_superset_part2")])
+        else:
+            buttons.append([InlineKeyboardButton(text="✅ Уже сделал подход", callback_data="done_set")])
+            
+        buttons.append([InlineKeyboardButton(text="⏳ +30 сек отдыха", callback_data="add_30sec")])
+        buttons.append([InlineKeyboardButton(text="🛒 Магазин (10 мин)", callback_data="go_shop")])
     
+    buttons.append([InlineKeyboardButton(text="⚙️ Настройки / Выбор дня", callback_data="open_settings")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def get_settings_keyboard():
@@ -126,7 +143,6 @@ def track_message(user_id: int, message_id: int):
 async def cleanup_all_messages(user_id: int):
     if user_id not in user_data or "tracked_messages" not in user_data[user_id]:
         return
-    
     for msg_id in list(user_data[user_id]["tracked_messages"]):
         try:
             await bot.delete_message(chat_id=user_id, message_id=msg_id)
@@ -179,10 +195,11 @@ async def live_timer(message: types.Message, user_id: int, total_seconds: int, b
                 except Exception:
                     pass
             
+            random_phrase = random.choice(MOTIVATION_PHRASES)
             nag_msg = await bot.send_message(
                 user_id,
-                f"🔔 **Эй, не отвлекайся!** Пора делать подход! (прошло уже +{nag_count * 15} сек)\n"
-                f"☝️ Нажми кнопку в сообщении выше.",
+                f"{random_phrase}\n(прошло уже +{nag_count * 15} сек)\n"
+                f"☝️ Нажми кнопку в сообщении выше!",
                 parse_mode="Markdown"
             )
             last_nag_id = nag_msg.message_id
@@ -203,6 +220,7 @@ async def start_cmd(message: types.Message):
         "day_key": day_key, 
         "superset_stage": 1, 
         "remaining_seconds": 0,
+        "extra_rest_count": 0,
         "tracked_messages": []
     }
     
@@ -213,44 +231,27 @@ async def start_cmd(message: types.Message):
         
     await cleanup_all_messages(user_id)
     
-    ex = get_current_exercise(user_id)
-    day_title = WORKOUT_SCHEDULES[day_key]["title"]
-    
-    msg = await message.answer(
-        f"🏋️‍♂️ **Тренировка начата!**\n\n"
-        f"📅 Сегодня: **{day_title}**\n"
-        f"1️⃣ Первое упражнение: **{ex['name']}**\n"
-        f"Подход: **1 из {MAX_SETS}**\n\n"
-        f"Сделай подход и нажми кнопку ниже.",
-        reply_markup=get_workout_keyboard(user_id),
-        parse_mode="Markdown"
-    )
+    if day_key == "rest":
+        msg = await message.answer(
+            f"🏖 **Сегодня по расписанию ДЕНЬ ОТДЫХА!**\n\n"
+            f"Мышцы растут, когда ты восстанавливаешься. Отдыхай, кушай белок и набирайся сил!\n\n"
+            f"Если всё же хочешь потренироваться — нажми кнопку настроек ниже и выбери нужную программу.",
+            reply_markup=get_workout_keyboard(user_id),
+            parse_mode="Markdown"
+        )
+    else:
+        ex = get_current_exercise(user_id)
+        day_title = WORKOUT_SCHEDULES[day_key]["title"]
+        msg = await message.answer(
+            f"🏋️‍♂️ **Тренировка начата!**\n\n"
+            f"📅 Сегодня: **{day_title}**\n"
+            f"1️⃣ Первое упражнение: **{ex['name']}**\n"
+            f"Подход: **1 из {MAX_SETS}**\n\n"
+            f"Сделай подход и нажми кнопку ниже.",
+            reply_markup=get_workout_keyboard(user_id),
+            parse_mode="Markdown"
+        )
     track_message(user_id, msg.message_id)
-
-@dp.message(F.text.lower().contains("магазин"))
-async def shop_command(message: types.Message):
-    user_id = message.from_user.id
-    cancel_user_timer(user_id)
-    if user_id not in user_data:
-        user_data[user_id] = {"sets": 0, "exercise_idx": 0, "day_key": get_today_schedule_key(), "superset_stage": 1, "remaining_seconds": 0, "tracked_messages": []}
-    
-    try:
-        await message.delete()
-    except Exception:
-        pass
-        
-    await cleanup_all_messages(user_id)
-    
-    msg = await message.answer("🛒 **Пошел в магазин!** У тебя есть 10 минут.", reply_markup=get_shop_keyboard())
-    track_message(user_id, msg.message_id)
-    
-    ex = get_current_exercise(user_id)
-    current_set = user_data[user_id]["sets"] + 1
-    base_txt = "🛒 **Режим «Магазин»**"
-    finish_txt = f"🛒 **10 минут прошло!** Время возвращаться!\n\n🏋️‍♂️ Упражнение: **{ex['name']}**\nПора делать **{current_set}-й подход**!"
-    
-    task = asyncio.create_task(live_timer(msg, user_id, 600, base_txt, finish_txt, keyboard=get_shop_keyboard()))
-    user_tasks[user_id] = task
 
 @dp.callback_query(F.data == "done_set")
 async def process_done_set(callback: types.CallbackQuery):
@@ -259,8 +260,9 @@ async def process_done_set(callback: types.CallbackQuery):
     await cleanup_all_messages(user_id)
 
     if user_id not in user_data:
-        user_data[user_id] = {"sets": 0, "exercise_idx": 0, "day_key": get_today_schedule_key(), "superset_stage": 1, "remaining_seconds": 0, "tracked_messages": []}
+        user_data[user_id] = {"sets": 0, "exercise_idx": 0, "day_key": get_today_schedule_key(), "superset_stage": 1, "remaining_seconds": 0, "extra_rest_count": 0, "tracked_messages": []}
 
+    user_data[user_id]["extra_rest_count"] = 0  # Сбрасываем лимит доп. отдыха
     user_data[user_id]["sets"] += 1
     current_set = user_data[user_id]["sets"]
     ex = get_current_exercise(user_id)
@@ -280,13 +282,22 @@ async def process_done_set(callback: types.CallbackQuery):
     msg = await callback.message.answer("⏱ Запуск таймера...", parse_mode="Markdown")
     track_message(user_id, msg.message_id)
 
-    task = asyncio.create_task(live_timer(msg, user_id, 150, base_txt, finish_txt))
+    task = asyncio.schedule_task if hasattr(asyncio, "schedule_task") else asyncio.create_task
+    task = task(live_timer(msg, user_id, 150, base_txt, finish_txt))
     user_tasks[user_id] = task
     await callback.answer()
 
 @dp.callback_query(F.data == "add_30sec")
 async def process_add_30sec(callback: types.CallbackQuery):
     user_id = callback.from_user.id
+    
+    # Проверка лимита на продление
+    current_extra = user_data[user_id].get("extra_rest_count", 0)
+    if current_extra >= MAX_EXTRA_REST_COUNT:
+        await callback.answer("❌ Лимит доп. отдыха исчерпан! Хватит сачковать, иди делать подход!", show_alert=True)
+        return
+
+    user_data[user_id]["extra_rest_count"] = current_extra + 1
     current_rem = user_data[user_id].get("remaining_seconds", 0)
     cancel_user_timer(user_id)
     await cleanup_all_messages(user_id)
@@ -295,7 +306,7 @@ async def process_add_30sec(callback: types.CallbackQuery):
     ex = get_current_exercise(user_id)
     current_set = user_data[user_id]["sets"] + 1
     
-    base_txt = f"⏳ **Добавлено 30 секунд отдыха.**\n🏋️‍♂️ Упражнение: **{ex['name']}**"
+    base_txt = f"⏳ **Добавлено 30 секунд отдыха** ({user_data[user_id]['extra_rest_count']}/{MAX_EXTRA_REST_COUNT}).\n🏋️‍♂️ Упражнение: **{ex['name']}**"
     finish_txt = f"⏰ **Дополнительный отдых окончен!** Пора делать **{current_set}-й подход**!"
     
     msg = await callback.message.answer("⏱ Обновление таймера...", parse_mode="Markdown")
@@ -312,11 +323,12 @@ async def process_open_settings(callback: types.CallbackQuery):
     await cleanup_all_messages(user_id)
 
     if user_id not in user_data:
-        user_data[user_id] = {"sets": 0, "exercise_idx": 0, "day_key": get_today_schedule_key(), "superset_stage": 1, "remaining_seconds": 0, "tracked_messages": []}
+        user_data[user_id] = {"sets": 0, "exercise_idx": 0, "day_key": get_today_schedule_key(), "superset_stage": 1, "remaining_seconds": 0, "extra_rest_count": 0, "tracked_messages": []}
         
     ex = get_current_exercise(user_id)
     current_set = user_data[user_id]["sets"]
-    day_title = WORKOUT_SCHEDULES[user_data[user_id]["day_key"]]["title"]
+    sched_key = user_data[user_id]["day_key"]
+    day_title = WORKOUT_SCHEDULES[sched_key]["title"] if sched_key != "rest" else "День отдыха"
     
     msg = await callback.message.answer(
         f"⚙️ **Настройки тренировки**\n\n"
@@ -336,7 +348,7 @@ async def process_change_day(callback: types.CallbackQuery):
     day_key = callback.data.replace("set_day_", "")
     
     cancel_user_timer(user_id)
-    user_data[user_id] = {"sets": 0, "exercise_idx": 0, "day_key": day_key, "superset_stage": 1, "remaining_seconds": 0, "tracked_messages": []}
+    user_data[user_id] = {"sets": 0, "exercise_idx": 0, "day_key": day_key, "superset_stage": 1, "remaining_seconds": 0, "extra_rest_count": 0, "tracked_messages": []}
     await cleanup_all_messages(user_id)
     
     ex = get_current_exercise(user_id)
@@ -359,7 +371,7 @@ async def process_add_manual_set(callback: types.CallbackQuery):
     await cleanup_all_messages(user_id)
 
     if user_id not in user_data:
-        user_data[user_id] = {"sets": 0, "exercise_idx": 0, "day_key": get_today_schedule_key(), "superset_stage": 1, "remaining_seconds": 0, "tracked_messages": []}
+        user_data[user_id] = {"sets": 0, "exercise_idx": 0, "day_key": get_today_schedule_key(), "superset_stage": 1, "remaining_seconds": 0, "extra_rest_count": 0, "tracked_messages": []}
         
     user_data[user_id]["sets"] += 1
     current_set = user_data[user_id]["sets"]
@@ -395,7 +407,7 @@ async def process_next_exercise(callback: types.CallbackQuery):
     await cleanup_all_messages(user_id)
 
     if user_id not in user_data:
-        user_data[user_id] = {"sets": 0, "exercise_idx": 0, "day_key": get_today_schedule_key(), "superset_stage": 1, "remaining_seconds": 0, "tracked_messages": []}
+        user_data[user_id] = {"sets": 0, "exercise_idx": 0, "day_key": get_today_schedule_key(), "superset_stage": 1, "remaining_seconds": 0, "extra_rest_count": 0, "tracked_messages": []}
         
     user_data[user_id]["sets"] = 0
     user_data[user_id]["exercise_idx"] += 1
@@ -463,7 +475,6 @@ async def process_back_from_shop(callback: types.CallbackQuery):
     track_message(user_id, msg.message_id)
     await callback.answer()
 
-# Микро веб-сервер для того, чтобы Render считал сервис активным
 async def handle_ping(request):
     return web.Response(text="Bot is running!")
 
