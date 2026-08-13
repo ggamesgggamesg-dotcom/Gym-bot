@@ -29,43 +29,49 @@ MOTIVATION_PHRASES = [
 
 WORKOUT_SCHEDULES = {
     "mon": {
-        "title": "День верха (Понедельник) — Грудь & Трицепс",
+        "title": "День верха A (Понедельник)",
         "exercises": [
-            {"name": "Жим на наклоне", "is_superset": False},
-            {"name": "Тяга вертикального блока к груди", "is_superset": False},
-            {"name": "Бабочки (грудь) / Кроссовер", "is_superset": False},
-            {"name": "Махи в стороны (средняя дельта)", "is_superset": False},
-            {"name": "Трицепс на блоке", "is_superset": False}
+            {"name": "1. Жим в наклоне", "is_superset": False},
+            {"name": "2. Тяга Т-грифа", "is_superset": False},
+            {"name": "3. Бабочки (грудь)", "is_superset": False},
+            {"name": "4. Тяга горизонтального блока", "is_superset": False},
+            {"name": "5. СУПЕРСЕТ: Махи ➡️ (отдых 30с) ➡️ Жим гантелей вертикально", "is_superset": True},
+            {"name": "6. Бицепс", "is_superset": False},
+            {"name": "7. Трицепс", "is_superset": False},
+            {"name": "8. Задние плечи", "is_superset": False}
         ]
     },
     "tue": {
         "title": "День ног (Вторник)",
         "exercises": [
-            {"name": "Жим ногами", "is_superset": False},
-            {"name": "Становая тяга", "is_superset": False},
-            {"name": "Разгибание ног", "is_superset": False},
-            {"name": "Сгибание ног", "is_superset": False},
-            {"name": "Икры", "is_superset": False}
+            {"name": "1. Жим ногами", "is_superset": False},
+            {"name": "2. Становая тяга", "is_superset": False},
+            {"name": "3. Разгибание ног", "is_superset": False},
+            {"name": "4. Сгибание ног", "is_superset": False},
+            {"name": "5. Икры", "is_superset": False}
         ]
     },
     "thu": {
-        "title": "День верха (Четверг) — Спина & Плечи & Бицепс",
+        "title": "День верха B (Четверг)",
         "exercises": [
-            {"name": "Тяга Т-грифа / Горизонтального блока", "is_superset": False},
-            {"name": "Жим лежа", "is_superset": False},
-            {"name": "Жим гантелей сидя (плечи)", "is_superset": False},
-            {"name": "Задняя дельта", "is_superset": False},
-            {"name": "Сгибания на бицепс", "is_superset": False}
+            {"name": "1. Жим в наклоне", "is_superset": False},
+            {"name": "2. Тяга вертикального блока", "is_superset": False},
+            {"name": "3. Жим лежа", "is_superset": False},
+            {"name": "4. Тяга горизонтального блока", "is_superset": False},
+            {"name": "5. СУПЕРСЕТ: Махи ➡️ (отдых 30с) ➡️ Жим гантелей вертикально", "is_superset": True},
+            {"name": "6. Бицепс", "is_superset": False},
+            {"name": "7. Трицепс", "is_superset": False},
+            {"name": "8. Задние плечи", "is_superset": False}
         ]
     },
     "fri": {
         "title": "День ног (Пятница)",
         "exercises": [
-            {"name": "Присед со штангой", "is_superset": False},
-            {"name": "Становая тяга", "is_superset": False},
-            {"name": "Разгибание ног", "is_superset": False},
-            {"name": "Сгибание ног", "is_superset": False},
-            {"name": "Икры", "is_superset": False}
+            {"name": "1. Присед со штангой", "is_superset": False},
+            {"name": "2. Становая тяга", "is_superset": False},
+            {"name": "3. Разгибание ног", "is_superset": False},
+            {"name": "4. Сгибание ног", "is_superset": False},
+            {"name": "5. Икры", "is_superset": False}
         ]
     }
 }
@@ -79,7 +85,7 @@ def get_today_schedule_key():
     elif weekday == 1: return "tue"
     elif weekday == 3: return "thu"
     elif weekday == 4: return "fri"
-    else: return "rest"  # Среда (2), Суббота (5), Воскресенье (6)
+    else: return "rest"
 
 def get_current_exercise(user_id):
     sched_key = user_data[user_id]["day_key"]
@@ -100,9 +106,9 @@ def get_workout_keyboard(user_id):
         if ex.get("is_superset"):
             stage = user_data[user_id].get("superset_stage", 1)
             if stage == 1:
-                buttons.append([InlineKeyboardButton(text="✅ Сделал Махи (1 часть)", callback_data="done_superset_part1")])
+                buttons.append([InlineKeyboardButton(text="✅ Сделал Махи (1/2)", callback_data="done_superset_part1")])
             elif stage == 2:
-                buttons.append([InlineKeyboardButton(text="✅ Сделал Жим (2 часть)", callback_data="done_superset_part2")])
+                buttons.append([InlineKeyboardButton(text="✅ Сделал Жим (2/2)", callback_data="done_superset_part2")])
         else:
             buttons.append([InlineKeyboardButton(text="✅ Уже сделал подход", callback_data="done_set")])
             
@@ -262,7 +268,7 @@ async def process_done_set(callback: types.CallbackQuery):
     if user_id not in user_data:
         user_data[user_id] = {"sets": 0, "exercise_idx": 0, "day_key": get_today_schedule_key(), "superset_stage": 1, "remaining_seconds": 0, "extra_rest_count": 0, "tracked_messages": []}
 
-    user_data[user_id]["extra_rest_count"] = 0  # Сбрасываем лимит доп. отдыха
+    user_data[user_id]["extra_rest_count"] = 0
     user_data[user_id]["sets"] += 1
     current_set = user_data[user_id]["sets"]
     ex = get_current_exercise(user_id)
@@ -282,8 +288,54 @@ async def process_done_set(callback: types.CallbackQuery):
     msg = await callback.message.answer("⏱ Запуск таймера...", parse_mode="Markdown")
     track_message(user_id, msg.message_id)
 
-    task = asyncio.schedule_task if hasattr(asyncio, "schedule_task") else asyncio.create_task
-    task = task(live_timer(msg, user_id, 150, base_txt, finish_txt))
+    task = asyncio.create_task(live_timer(msg, user_id, 150, base_txt, finish_txt))
+    user_tasks[user_id] = task
+    await callback.answer()
+
+# ОБРАБОТКА СУПЕРСЕТА ЧАСТЬ 1 (Махи)
+@dp.callback_query(F.data == "done_superset_part1")
+async def process_done_superset_part1(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    cancel_user_timer(user_id)
+    await cleanup_all_messages(user_id)
+
+    user_data[user_id]["superset_stage"] = 2
+    base_txt = "🔥 **Махи сделаны!** Перевод дыхания (30 сек) перед Жимом!"
+    finish_txt = "⏰ **30 секунд прошло!** Бери гантели и делай **Жим вертикально**!"
+
+    msg = await callback.message.answer("⏱ Таймер суперсета (30с)...", parse_mode="Markdown")
+    track_message(user_id, msg.message_id)
+
+    task = asyncio.create_task(live_timer(msg, user_id, 30, base_txt, finish_txt))
+    user_tasks[user_id] = task
+    await callback.answer()
+
+# ОБРАБОТКА СУПЕРСЕТА ЧАСТЬ 2 (Жим гантелей)
+@dp.callback_query(F.data == "done_superset_part2")
+async def process_done_superset_part2(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    cancel_user_timer(user_id)
+    await cleanup_all_messages(user_id)
+
+    user_data[user_id]["superset_stage"] = 1
+    user_data[user_id]["sets"] += 1
+    current_set = user_data[user_id]["sets"]
+    ex = get_current_exercise(user_id)
+
+    if current_set >= MAX_SETS:
+        user_data[user_id]["sets"] = 0
+        user_data[user_id]["exercise_idx"] += 1
+        next_ex = get_current_exercise(user_id)
+        base_txt = f"🎉 **Суперсет окончен!** ({MAX_SETS} подхода сделано).\n\n➡️ Следующее упражнение: **{next_ex['name']}**"
+        finish_txt = f"⏰ **Отдых окончен!** Переходим к: **{next_ex['name']}**!"
+    else:
+        base_txt = f"💪 **Полный круг суперсета засчитан!** ({current_set}/{MAX_SETS})"
+        finish_txt = f"⏰ **2:30 мин прошло!** Готовься к **{current_set + 1}-му кругу суперсета** (начинаем с Махов)!"
+
+    msg = await callback.message.answer("⏱ Запуск основного отдыха (150с)...", parse_mode="Markdown")
+    track_message(user_id, msg.message_id)
+
+    task = asyncio.create_task(live_timer(msg, user_id, 150, base_txt, finish_txt))
     user_tasks[user_id] = task
     await callback.answer()
 
@@ -291,7 +343,6 @@ async def process_done_set(callback: types.CallbackQuery):
 async def process_add_30sec(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     
-    # Проверка лимита на продление
     current_extra = user_data[user_id].get("extra_rest_count", 0)
     if current_extra >= MAX_EXTRA_REST_COUNT:
         await callback.answer("❌ Лимит доп. отдыха исчерпан! Хватит сачковать, иди делать подход!", show_alert=True)
